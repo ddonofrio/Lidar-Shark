@@ -1,5 +1,6 @@
 from threading import Event, Thread
 from PySide6.QtCore import QObject, Signal
+from lidar_sdk.errors import DataTimeout
 
 class AcquisitionController(QObject):
     scan_received = Signal(object); source_event = Signal(object); status = Signal(object); failure = Signal(str); finished = Signal()
@@ -11,7 +12,11 @@ class AcquisitionController(QObject):
     def _run(self):
         try:
             while not self._stop.is_set():
-                scan = self.subscription.get(0.25)
+                try:
+                    scan = self.subscription.get(0.25)
+                except DataTimeout:
+                    # A timeout is a polling interval, not a source failure.
+                    continue
                 if self._stop.is_set():
                     break
                 self.scan_received.emit(scan)

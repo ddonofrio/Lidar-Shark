@@ -15,6 +15,7 @@ class ScanView(QWidget):
         self.pan_x=0.0; self.pan_y=0.0; self.selected_point=None; self.show_color_range=True; self.show_grid=True; self._drag_start=None; self._pan_start=(0.0, 0.0); self._was_drag=False
         self.setMinimumSize(500,400)
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._timer = self.startTimer(33)
     def set_persistence(self, value):
         self.persistence_s = value / 1000.0
@@ -186,5 +187,10 @@ class ScanView(QWidget):
     def leaveEvent(self,event):
         self.mouse_position_changed.emit(None); super().leaveEvent(event)
     def wheelEvent(self,event):
-        self.zoom=max(.1,min(10,self.zoom*(1.1 if event.angleDelta().y()>0 else .9)))
+        self.setFocus(Qt.MouseFocusReason)
+        delta=event.angleDelta().y() or event.pixelDelta().y()
+        if delta == 0:
+            event.ignore(); return
+        self.zoom=max(.1,min(10,self.zoom*(1.1 if delta>0 else .9)))
         self._emit_mouse_position(event.position()); self.update()
+        event.accept()

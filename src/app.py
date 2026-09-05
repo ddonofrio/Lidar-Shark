@@ -1,6 +1,7 @@
 import sys
 import math
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFormLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QSlider, QGroupBox, QDockWidget, QToolButton, QFrame, QStyle
 from lidar_sdk.discovery import discover_providers
 from .acquisition import AcquisitionController
@@ -10,7 +11,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("Lidar-Shark"); self.resize(1100,700); self.controller=None; self.config_widgets={}
         root=QWidget(); layout=QVBoxLayout(root); self.providers=QComboBox(); self.sources=QComboBox(); self.status=QLabel(); self._last_counts=(0, 0); self._mouse_position=None; self._selected_point=None; self._health_text=""; self._stream_text=""
-        toolbar=QGroupBox("Acquisition"); bar=QHBoxLayout(toolbar)
+        toolbar=QWidget(); bar=QHBoxLayout(toolbar); bar.setContentsMargins(0,0,0,0)
 
         self.start_button=QPushButton("▶  Start"); self.stop_button=QPushButton("■  Stop")
         self.start_button.setMinimumWidth(110); self.stop_button.setMinimumWidth(110); self.stop_button.setEnabled(False)
@@ -19,8 +20,10 @@ class MainWindow(QMainWindow):
         self.statistics=QLabel("")
         self.statistics.setObjectName("scanStatistics")
         layout.addWidget(self.statistics); self.setCentralWidget(root)
-        self.options_dock=QDockWidget("Configuration", self); self.options_dock.setAllowedAreas(Qt.LeftDockWidgetArea|Qt.RightDockWidgetArea)
-        options=QWidget(); options_layout=QVBoxLayout(options)
+        self.options_dock=QDockWidget("Configuration", self); self.options_dock.setAllowedAreas(Qt.LeftDockWidgetArea|Qt.RightDockWidgetArea); self.options_dock.setMinimumWidth(220)
+        options=QWidget(); options_layout=QVBoxLayout(options); options_layout.setContentsMargins(6,6,6,6); options_layout.setSpacing(6)
+        self.redock_button=QToolButton(); self.redock_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarNormalButton)); self.redock_button.setToolTip("Dock Configuration"); self.redock_button.setAccessibleName("Dock Configuration"); self.redock_button.setAutoRaise(True); self.redock_button.setFixedSize(24,24); self.redock_button.clicked.connect(self._toggle_dock)
+        self.close_config_button=QToolButton(); self.close_config_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarCloseButton)); self.close_config_button.setToolTip("Close Configuration"); self.close_config_button.setAccessibleName("Close Configuration"); self.close_config_button.setAutoRaise(True); self.close_config_button.setFixedSize(24,24); self.close_config_button.clicked.connect(self._close_configuration)
         persistence=QGroupBox("Phosphor persistence"); persist_bar=QVBoxLayout(persistence)
         self.persistence_label=QLabel("750 ms"); self.persistence=QSlider(Qt.Horizontal); self.persistence.setRange(50,2000); self.persistence.setValue(750); self.persistence.setToolTip("How long each return remains visible")
         persist_bar.addWidget(self.persistence); persist_bar.addWidget(self.persistence_label)
@@ -35,24 +38,28 @@ class MainWindow(QMainWindow):
         display_layout.addWidget(self.show_color_range); display_layout.addWidget(self.show_grid)
         options_layout.addWidget(driver_box); options_layout.addWidget(separator); options_layout.addWidget(display_box); options_layout.addStretch()
         self.options_dock.setWidget(options); self.addDockWidget(Qt.RightDockWidgetArea,self.options_dock); self.options_dock.hide()
+        titlebar=QWidget(); titlebar_layout=QHBoxLayout(titlebar); titlebar_layout.setContentsMargins(8,0,2,0); titlebar_layout.setSpacing(2); titlebar_layout.addWidget(QLabel("Configuration")); titlebar_layout.addStretch(); titlebar_layout.addWidget(self.redock_button); titlebar_layout.addWidget(self.close_config_button); self.options_dock.setTitleBarWidget(titlebar)
+        self.options_dock.topLevelChanged.connect(self._configuration_floating_changed)
         for label in toolbar.findChildren(QLabel): label.hide()
         self.start_button.setText(""); self.stop_button.setText("")
         self.start_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay)); self.stop_button.setIcon(self.style().standardIcon(QStyle.SP_MediaStop))
         self.start_button.setToolTip("Start"); self.stop_button.setToolTip("Stop"); self.start_button.setAccessibleName("Start"); self.stop_button.setAccessibleName("Stop")
         self.start_button.setFixedSize(36,32); self.stop_button.setFixedSize(36,32)
         self.start_button.setObjectName("startButton"); self.stop_button.setObjectName("stopButton")
+        for button in (self.start_button, self.stop_button):
+            palette=button.palette()
+            palette.setColor(QPalette.Button, palette.color(QPalette.Highlight))
+            palette.setColor(QPalette.ButtonText, palette.color(QPalette.HighlightedText))
+            button.setPalette(palette)
         root.setStyleSheet("""
-            QPushButton#startButton, QPushButton#stopButton { background: #293342; color: #e8eef7; border: 1px solid #607a9b; border-radius: 5px; }
-            QPushButton#startButton:hover, QPushButton#stopButton:hover { background: #374862; border-color: #8ab4e8; }
-            QPushButton#startButton:pressed, QPushButton#stopButton:pressed { background: #46617f; }
-            QPushButton#startButton:disabled, QPushButton#stopButton:disabled { background: #20262f; color: #687383; border-color: #39424f; }
             QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #8aa095; border-radius: 3px; background: #18241f; }
             QCheckBox::indicator:checked { background: #2fbf71; border-color: #8ff0b7; }
             QCheckBox::indicator:unchecked { background: #26302c; }
         """)
         self.options_button=QToolButton(); self.options_button.setText("⚙"); self.options_button.setFixedSize(36,32); self.options_button.setToolTip("Display options"); self.options_button.setAccessibleName("Display options")
-        bar.removeWidget(self.options_button); self.options_button.setParent(None)
+        bar.removeWidget(self.options_button); self.options_button.setParent(None); self.options_button.setText("\u2699"); self.options_button.setToolTip("Open Configuration"); self.options_button.setAccessibleName("Open Configuration"); self.options_button.setAutoRaise(True); self.options_button.setFixedSize(36,32)
         header=QWidget(); header_layout=QHBoxLayout(header); header_layout.setContentsMargins(0,0,0,0); header_layout.addWidget(toolbar); header_layout.addStretch(); header_layout.addWidget(self.options_button); layout.insertWidget(0,header)
+        self._configuration_floating_changed(self.options_dock.isFloating())
         self.loaded, self.diagnostics = discover_providers()
         for p in self.loaded:
             d=p.describe(); self.providers.addItem(f"{d.display_name} ({d.provider_id})",p)
@@ -61,9 +68,29 @@ class MainWindow(QMainWindow):
             self._set_health("No drivers available. Install a lidar-sdk driver and restart.")
         self.providers.currentIndexChanged.connect(self._provider_changed); self.sources.currentIndexChanged.connect(self._apply_source_range); self.start_button.clicked.connect(self.start); self.stop_button.clicked.connect(self.stop); self.options_button.clicked.connect(self._toggle_options); self.options_dock.visibilityChanged.connect(self._options_visibility_changed); self.persistence.valueChanged.connect(self._persistence_changed); self.color_mode.currentTextChanged.connect(self.view.set_color_mode); self.show_color_range.toggled.connect(self.view.set_show_color_range); self.show_grid.toggled.connect(self.view.set_show_grid); self.view.mouse_position_changed.connect(self._mouse_position_changed); self.view.sample_selected.connect(self._sample_selected); self.view.set_color_mode("By range"); self.view.set_show_color_range(True); self.view.set_show_grid(True); self._provider_changed(0)
     def _toggle_options(self, checked=False):
-        self.options_dock.setVisible(not self.options_dock.isVisible())
+        if self.options_dock.isVisible():
+            self.options_dock.hide()
+        else:
+            self.options_dock.setFloating(False)
+            self.options_dock.show()
+    def _toggle_dock(self):
+        self.options_dock.setFloating(not self.options_dock.isFloating())
+        self.options_dock.show()
+    def _close_configuration(self):
+        self.options_dock.hide()
     def _options_visibility_changed(self, visible):
         self.options_button.setText("⚙")
+    def _configuration_floating_changed(self, floating):
+        self.redock_button.setVisible(True)
+        action="Dock" if floating else "Undock"
+        icon=QStyle.SP_ArrowLeft if floating else QStyle.SP_ArrowRight
+        self.redock_button.setIcon(self.style().standardIcon(icon))
+        self.redock_button.setToolTip(f"{action} Configuration")
+        self.redock_button.setAccessibleName(f"{action} Configuration")
+        if floating:
+            self.options_dock.widget().adjustSize()
+            self.options_dock.adjustSize()
+            self.options_dock.resize(self.options_dock.sizeHint())
     def _persistence_changed(self,value):
         self.persistence_label.setText(f"{value} ms"); self.view.set_persistence(value)
     def _mouse_position_changed(self,position):

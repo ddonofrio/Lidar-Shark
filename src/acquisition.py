@@ -1,6 +1,5 @@
 from threading import Event, Thread
 from PySide6.QtCore import QObject, Signal
-from lidar_sdk.errors import EndOfStream, LidarError
 
 class AcquisitionController(QObject):
     scan_received = Signal(object); source_event = Signal(object); status = Signal(object); failure = Signal(str); finished = Signal()
@@ -21,8 +20,13 @@ class AcquisitionController(QObject):
                 except Exception:
                     # A source is allowed not to expose useful live status.
                     pass
-        except (EndOfStream,LidarError) as exc:
-            if not self._stop.is_set(): self.failure.emit(str(exc))
+        except Exception as exc:
+            # Some installed providers expose their equivalent of
+            # SubscriptionClosed from their own compatibility layer. Closing
+            # a subscription is a normal lifecycle event, never a UI error.
+            normal_close = exc.__class__.__name__ in {"SubscriptionClosed", "EndOfStream"}
+            if not self._stop.is_set() and not normal_close:
+                self.failure.emit(str(exc))
         finally: self.finished.emit()
     def stop(self):
         self._stop.set()

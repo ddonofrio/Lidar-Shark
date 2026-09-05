@@ -1,11 +1,12 @@
 import sys
 import math
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFormLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QSlider, QGroupBox, QDockWidget, QToolButton, QFrame, QStyle
 from lidar_sdk.discovery import discover_providers
 from .acquisition import AcquisitionController
 from .widgets import ScanView
+from pathlib import Path
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -187,5 +188,11 @@ class MainWindow(QMainWindow):
         if not self._health_text.startswith("Stop error"): self._set_health("Stopped · canvas cleared")
     def closeEvent(self,event): self.stop(); event.accept()
 def main():
-    app=QApplication(sys.argv); window=MainWindow(); window.show(); return app.exec()
+    app=QApplication(sys.argv)
+    icon_path = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
+    if not icon_path.is_file():
+        icon_path = Path(sys.prefix) / "share" / "lidar-shark" / "logo.png"
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
+    window=MainWindow(); window.show(); return app.exec()
 if __name__=="__main__": main()

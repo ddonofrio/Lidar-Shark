@@ -12,3 +12,4 @@ lidar-shark = "lidar_shark.app:main"
 [tool.setuptools]
 packages = ["lidar_shark"]
 package-dir = {lidar_shark = "src"}
+data-files = {"share/lidar-shark" = ["assets/logo.png"]}

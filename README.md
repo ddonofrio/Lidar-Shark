@@ -1,8 +1,45 @@
 # Lidar-Shark
 
-Lidar-Shark is an interactive top-down 2D LiDAR viewer driven exclusively by the
-`lidar-sdk` provider contract. The viewer discovers installed providers through the
-SDK and does not import `stl27l_driver`.
+<p align="center">
+  <img src="assets/logo.png" alt="Lidar-Shark logo" width="180">
+</p>
+
+Lidar-Shark is an interactive top-down 2D LiDAR viewer for inspecting live and
+emulated scans. The interface is organized around a large scan view: the dark
+grid represents the metric workspace, the sensor is shown at the origin, and
+valid returns appear as colored points. Green indicates the nearest range,
+yellow the middle band, and red the farthest returns. The top-left controls
+start and stop acquisition; the status bar reports the current scan, valid
+samples, update rate, and dropped samples. The Configuration panel on the right
+selects the driver and source, exposes emulator settings such as simulated noise,
+and controls persistence, point coloring, the range legend, and the grid.
+
+![Lidar-Shark interface](docs/lidar-shark-viewer.png)
+
+The figure below shows a live scan from the STL-27L driver's cross-corridor
+emulator. The emulator generates the same SDK scan data that a compatible source
+would publish, without requiring physical hardware. The central plot is a
+top-down Cartesian view of the sensor: the origin is at the centre,
+the vertical axis points towards the sensor front, and the horizontal axis shows
+the left/right direction. Each colored mark is a valid measured return. The
+four arms of the simulated corridor appear as the four bands extending from the
+origin. The range legend in the upper-right of the plot maps green, yellow, and
+red to near, intermediate, and far returns respectively; the grid and scale
+marker provide metric reference.
+
+The control panel on the right is divided into two sections. **Driver and
+source** identifies the selected provider and its data source and exposes the
+source-specific configuration, including the optional simulated noise level.
+**Display options** controls phosphor persistence, point coloring, the range
+legend, and the metric grid. The status line at the bottom reports the scan ID,
+the number of valid samples out of the total, the publication rate, the age of
+the latest scan, and any dropped samples.
+
+The viewer obtains this data through the `lidar-sdk` provider contract. At
+startup it discovers installed providers and populates the driver and source
+selectors from their descriptors. The viewer does not import `stl27l_driver`
+directly, so the same interface can be used with the STL-27L driver and its
+emulated source, or with another compatible provider and source.
 
 ## Install and run
 

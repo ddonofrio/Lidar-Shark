@@ -1,27 +1,27 @@
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QSlider, QGroupBox, QDockWidget, QToolButton
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFormLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QSlider, QGroupBox, QDockWidget, QToolButton
 from lidar_sdk.discovery import discover_providers
 from .acquisition import AcquisitionController
 from .widgets import ScanView
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); self.setWindowTitle("Lidar-Shark"); self.resize(1100,700); self.controller=None
+        super().__init__(); self.setWindowTitle("Lidar-Shark"); self.resize(1100,700); self.controller=None; self.config_widgets={}
         root=QWidget(); layout=QVBoxLayout(root); self.providers=QComboBox(); self.sources=QComboBox(); self.status=QLabel("Stopped · no acquisition"); self._last_counts=(0, 0)
         toolbar=QGroupBox("Driver and acquisition"); bar=QHBoxLayout(toolbar)
         bar.addWidget(QLabel("Driver")); bar.addWidget(self.providers,1); bar.addWidget(QLabel("Source")); bar.addWidget(self.sources,1)
         self.start_button=QPushButton("▶  Start"); self.stop_button=QPushButton("■  Stop")
         self.start_button.setMinimumWidth(110); self.stop_button.setMinimumWidth(110); self.stop_button.setEnabled(False)
         bar.addWidget(self.start_button); bar.addWidget(self.stop_button)
-        self.view=ScanView(); layout.addWidget(toolbar); layout.addWidget(self.view,1); layout.addWidget(self.status); self.setCentralWidget(root)
+        self.view=ScanView(); layout.addWidget(toolbar); self.config_box=QGroupBox("Source configuration"); self.config_form=QFormLayout(self.config_box); layout.addWidget(self.view,1); layout.addWidget(self.status); self.setCentralWidget(root)
         self.options_dock=QDockWidget("Display options", self); self.options_dock.setAllowedAreas(Qt.LeftDockWidgetArea|Qt.RightDockWidgetArea)
         options=QWidget(); options_layout=QVBoxLayout(options)
         persistence=QGroupBox("Phosphor persistence"); persist_bar=QVBoxLayout(persistence)
         self.persistence_label=QLabel("750 ms"); self.persistence=QSlider(Qt.Horizontal); self.persistence.setRange(50,2000); self.persistence.setValue(750); self.persistence.setToolTip("How long each return remains visible")
         persist_bar.addWidget(self.persistence); persist_bar.addWidget(self.persistence_label)
         color=QGroupBox("Point color"); color_layout=QVBoxLayout(color); self.color_mode=QComboBox(); self.color_mode.addItems(["Uniform", "By range"]); color_layout.addWidget(self.color_mode)
-        options_layout.addWidget(persistence); options_layout.addWidget(color); options_layout.addStretch(); self.options_dock.setWidget(options); self.addDockWidget(Qt.RightDockWidgetArea,self.options_dock); self.options_dock.hide()
+        options_layout.addWidget(persistence); options_layout.addWidget(color); options_layout.addWidget(self.config_box); options_layout.addStretch(); self.options_dock.setWidget(options); self.addDockWidget(Qt.RightDockWidgetArea,self.options_dock); self.options_dock.hide()
         self.options_button=QToolButton(); self.options_button.setText("⚙"); self.options_button.setFixedSize(36,32); self.options_button.setToolTip("Display options"); self.options_button.setAccessibleName("Display options")
         bar.addWidget(self.options_button)
         view_menu=self.menuBar().addMenu("View")
@@ -43,14 +43,46 @@ class MainWindow(QMainWindow):
         self.persistence_label.setText(f"{value} ms"); self.view.set_persistence(value)
     def _provider_changed(self,index):
         self.sources.clear()
+        self._clear_config()
         provider = self.providers.itemData(index) if index >= 0 else None
         if provider is not None:
             for s in provider.list_sources(): self.sources.addItem(f"{s.display_name} ({s.source_id})",s)
         self._apply_source_range()
+        self._build_config(self.sources.currentData())
     def _apply_source_range(self):
         descriptor=self.sources.currentData()
         configured_range=next((field.default for field in descriptor.fields if field.key == "max_range_mm"), None) if descriptor else None
         self.view.set_sensor_range(configured_range)
+    def _clear_config(self):
+        while self.config_form.count():
+            item=self.config_form.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+        self.config_widgets={}
+    def _build_config(self, descriptor):
+        if descriptor is None: self.config_box.hide(); return
+        self.config_box.show()
+        for field in descriptor.fields:
+            if field.type == "boolean":
+                widget=QCheckBox(); widget.setChecked(bool(field.default)); widget.setToolTip(field.description)
+                self.config_form.addRow(field.label, widget); self.config_widgets[field.key]=widget
+            elif field.type == "decimal" and field.minimum is not None and field.maximum is not None:
+                slider=QSlider(Qt.Horizontal); slider.setRange(round(field.minimum*100), round(field.maximum*100)); slider.setValue(round(float(field.default or 0)*100)); slider.setToolTip(field.description)
+                label=QLabel(f"{float(field.default or 0):.2f}"); row=QHBoxLayout(); row.addWidget(slider,1); row.addWidget(label)
+                holder=QWidget(); holder.setLayout(row); self.config_form.addRow(field.label,holder); self.config_widgets[field.key]=(slider,label)
+                slider.valueChanged.connect(lambda value, out=label: out.setText(f"{value/100:.2f}"))
+        enabled=self.config_widgets.get("noise_enabled"); level=self.config_widgets.get("noise_level")
+        if isinstance(enabled,QCheckBox) and isinstance(level,tuple):
+            def toggle_noise(checked):
+                if checked and level[0].value() == 0:
+                    level[0].setValue(25)
+                level[0].setEnabled(checked)
+                if self.controller: self.start()
+            level[0].setEnabled(enabled.isChecked()); enabled.toggled.connect(toggle_noise)
+            level[0].sliderReleased.connect(self._configuration_changed)
+    def _configuration_changed(self):
+        if self.controller: self.start()
+    def _source_config(self):
+        return {key: widget.isChecked() if isinstance(widget,QCheckBox) else widget[0].value()/100 for key,widget in self.config_widgets.items()}
     def start(self):
         if self.controller: self.stop()
         if self.providers.currentIndex()<0: self.status.setText("No drivers installed"); return
@@ -58,7 +90,7 @@ class MainWindow(QMainWindow):
         if provider is None or descriptor is None:
             self.status.setText("No driver/source available. Install a driver and restart.")
             return
-        source=provider.create_source(descriptor.source_id,provider.validate_config(descriptor.source_id,{}))
+        source=provider.create_source(descriptor.source_id,provider.validate_config(descriptor.source_id,self._source_config()))
         self._apply_source_range()
         self.controller=AcquisitionController(source); self.controller.scan_received.connect(self._scan_received); self.controller.status.connect(self._source_status); self.controller.failure.connect(self._acquisition_failure); self.controller.start(); self.start_button.setEnabled(False); self.stop_button.setEnabled(True); self.status.setText("Streaming · waiting for data…")
     def _acquisition_failure(self,error):

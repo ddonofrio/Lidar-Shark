@@ -66,3 +66,9 @@ def test_range_colors_use_documented_distance_bands():
     assert widget._range_color(2000).name() == "#39d353"
     assert widget._range_color(2000.1).name() == "#ffd21f"
     assert widget._range_color(8000.1).name() == "#ff3030"
+
+
+def test_range_legend_uses_compact_utf8_labels():
+    segments = ScanView._range_legend_segments()
+    assert [label for _, label, _ in segments] == ["0-2 m", "2-8 m", "8-25 m"]
+    assert [precision for _, _, precision in segments] == ["±15 mm", "±20 mm", "±30 mm"]

@@ -71,6 +71,9 @@ class ScanView(QWidget):
         if distance_mm <= 8000:
             return QColor("#ffd21f")
         return QColor("#ff3030")
+    @staticmethod
+    def _range_legend_segments():
+        return (("#39d353", "0-2 m", "±15 mm"), ("#ffd21f", "2-8 m", "±20 mm"), ("#ff3030", "8-25 m", "±30 mm"))
     def _grid_spacing_mm(self, scale):
         target_pixels=70.0
         raw=target_pixels/scale
@@ -142,13 +145,12 @@ class ScanView(QWidget):
         painter.drawText(x, y-9, f"{bar_mm/1000:g} m")
         if self.color_mode == "By range" and self.show_color_range:
             legend_width=min(160, max(140, self.width()-bar-70)); legend_x=self.width()-legend_width-18; legend_y=18; legend_height=10
-            segments=(("#39d353","0.03-2 m (±15 mm)"),("#ffd21f","2-8 m (±20 mm)"),("#ff3030","8-25 m (±30 mm)"))
-            segments=(("#39d353","0.03-2 m","\\u00b115 mm"),("#ffd21f","2-8 m","\\u00b120 mm"),("#ff3030","8-25 m","\\u00b130 mm"))
+            segments=self._range_legend_segments()
             segment_width=legend_width/len(segments)
             for index,(color,_,_) in enumerate(segments):
                 painter.fillRect(QRectF(legend_x+index*segment_width,legend_y,segment_width,legend_height),QBrush(QColor(color)))
             painter.setPen(QPen(QColor("#d7eee5"),1)); painter.drawRect(legend_x,legend_y,legend_width,legend_height)
-            painter.setFont(QFont("Segoe UI",8))
+            painter.setFont(QFont("Segoe UI",7))
             for index,(_,value_text,precision_text) in enumerate(segments):
                 tick_x=legend_x+(index+0.5)*segment_width
                 painter.drawLine(tick_x,legend_y+legend_height,tick_x,legend_y+legend_height+4)

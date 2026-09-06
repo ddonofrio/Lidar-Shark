@@ -10,6 +10,6 @@ dependencies = ["lidar-sdk>=1.0,<2", "PySide6>=6.8", "pyqtgraph>=0.13"]
 [project.scripts]
 lidar-shark = "lidar_shark.app:main"
 [tool.setuptools]
-packages = ["lidar_shark"]
+packages = ["lidar_shark", "lidar_shark.scanner"]
 package-dir = {lidar_shark = "src"}
 data-files = {"share/lidar-shark" = ["assets/logo.png"]}

@@ -17,6 +17,14 @@ class ScanView(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
         self._timer = self.startTimer(33)
+        self.mode = "Top View"
+        self.scanner_profiles = []
+    def set_mode(self, mode):
+        self.mode = mode
+        self.update()
+    def set_scanner_profiles(self, profiles):
+        self.scanner_profiles = list(profiles)
+        self.update()
     def set_persistence(self, value):
         self.persistence_s = value / 1000.0
         self.update()
@@ -33,7 +41,7 @@ class ScanView(QWidget):
         self.sensor_range_mm=float(range_mm) if range_mm and range_mm > 0 else None
         self.update()
     def clear_scan(self):
-        self.scan=None; self.selected_point=None; self._returns.clear(); self.update()
+        self.scan=None; self.selected_point=None; self._returns.clear(); self.scanner_profiles.clear(); self.update()
     def recenter(self):
         self.pan_x=0.0; self.pan_y=0.0; self.update()
     def set_scan(self,scan):
@@ -117,7 +125,15 @@ class ScanView(QWidget):
                 painter.drawEllipse(c, int(metres*1000*scale), int(metres*1000*scale))
         painter.setPen(QPen(QColor("#315447"),1)); painter.drawLine(QLineF(0,c.y(),self.width(),c.y())); painter.drawLine(QLineF(c.x(),0,c.x(),self.height()))
         now=time.monotonic()
-        for p, born in self._returns:
+        if self.mode == "Scanner":
+            all_points=[p for profile in self.scanner_profiles for p in profile.points]
+            max_x=max((abs(p.profile_mm) for p in all_points), default=1000.0)
+            max_y=max((abs(p.progression_value) for p in all_points), default=1000.0)
+            scanner_scale=min(self.width()/(2*max_x), self.height()/(2*max_y))*self.zoom
+            for p in all_points:
+                color=self._range_color(p.range_mm) if self.color_mode == "By range" else QColor("#50e6aa")
+                painter.setPen(QPen(color,3)); painter.drawPoint(self.width()/2+p.profile_mm*scanner_scale, self.height()/2+p.progression_value*scanner_scale)
+        for p, born in ([] if self.mode == "Scanner" else self._returns):
             age=now-born; alpha=max(15,min(255,int(255*(1-age/max(self.persistence_s,0.001)))))
             if self.color_mode == "By range":
                 point_distance=math.hypot(p.x_mm,p.y_mm)

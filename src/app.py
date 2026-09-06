@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFormLayout, Q
 from lidar_sdk.discovery import discover_providers
 from .acquisition import AcquisitionController
 from .widgets import ScanView
+from .scanner import ScannerAccumulator, LinearSweepSettings, TurntableSettings, project_linear_profile, project_turntable_profile
 from pathlib import Path
 
 class MainWindow(QMainWindow):
@@ -33,6 +34,14 @@ class MainWindow(QMainWindow):
         driver_layout.addRow("Driver", self.providers); driver_layout.addRow("Source", self.sources); driver_layout.addRow(self.config_box)
         separator=QFrame(); separator.setFrameShape(QFrame.HLine); separator.setFrameShadow(QFrame.Sunken)
         display_box=QGroupBox("Display options"); display_layout=QVBoxLayout(display_box)
+        self.visualization=QComboBox(); self.visualization.addItems(["Top View", "Scanner"])
+        display_layout.addWidget(self.visualization)
+        self.scanner_box=QGroupBox("Scanner configuration"); scanner_layout=QFormLayout(self.scanner_box)
+        self.scan_mode=QComboBox(); self.scan_mode.addItems(["Linear Sweep", "Turntable"])
+        self.fov=QSlider(Qt.Horizontal); self.fov.setRange(1,360); self.fov.setValue(180)
+        self.reverse_profile=QCheckBox(); self.clear_capture=QPushButton("Clear capture")
+        scanner_layout.addRow("Scan mode",self.scan_mode); scanner_layout.addRow("Field of view (degrees)",self.fov); scanner_layout.addRow("Reverse profile",self.reverse_profile); scanner_layout.addRow(self.clear_capture)
+        display_layout.addWidget(self.scanner_box); self.scanner_box.hide(); self._scanner_accumulator=None
         display_layout.addWidget(persistence); display_layout.addWidget(color)
         self.show_color_range=QCheckBox("Show color range"); self.show_color_range.setChecked(True)
         self.show_grid=QCheckBox("Show grid"); self.show_grid.setChecked(True)
@@ -67,7 +76,12 @@ class MainWindow(QMainWindow):
         if not self.loaded:
             self.providers.addItem("No drivers installed", None)
             self._set_health("No drivers available. Install a lidar-sdk driver and restart.")
-        self.providers.currentIndexChanged.connect(self._provider_changed); self.sources.currentIndexChanged.connect(self._apply_source_range); self.start_button.clicked.connect(self.start); self.stop_button.clicked.connect(self.stop); self.options_button.clicked.connect(self._toggle_options); self.options_dock.visibilityChanged.connect(self._options_visibility_changed); self.persistence.valueChanged.connect(self._persistence_changed); self.color_mode.currentTextChanged.connect(self.view.set_color_mode); self.show_color_range.toggled.connect(self.view.set_show_color_range); self.show_grid.toggled.connect(self.view.set_show_grid); self.view.mouse_position_changed.connect(self._mouse_position_changed); self.view.sample_selected.connect(self._sample_selected); self.view.set_color_mode("By range"); self.view.set_show_color_range(True); self.view.set_show_grid(True); self._provider_changed(0)
+        self.providers.currentIndexChanged.connect(self._provider_changed); self.sources.currentIndexChanged.connect(self._apply_source_range); self.start_button.clicked.connect(self.start); self.stop_button.clicked.connect(self.stop); self.options_button.clicked.connect(self._toggle_options); self.options_dock.visibilityChanged.connect(self._options_visibility_changed); self.persistence.valueChanged.connect(self._persistence_changed); self.color_mode.currentTextChanged.connect(self.view.set_color_mode); self.show_color_range.toggled.connect(self.view.set_show_color_range); self.show_grid.toggled.connect(self.view.set_show_grid); self.view.mouse_position_changed.connect(self._mouse_position_changed); self.view.sample_selected.connect(self._sample_selected); self.view.set_color_mode("By range"); self.view.set_show_color_range(True); self.view.set_show_grid(True); self._provider_changed(0); self.visualization.currentTextChanged.connect(self._visualization_changed); self.clear_capture.clicked.connect(self._clear_capture)
+    def _visualization_changed(self, mode):
+        self.scanner_box.setVisible(mode == "Scanner"); self.persistence.setEnabled(mode != "Scanner"); self.view.set_mode(mode)
+    def _clear_capture(self):
+        if self._scanner_accumulator: self._scanner_accumulator.reset()
+        self.view.clear_scan(); self._set_health("Scanner capture cleared")
     def _toggle_options(self, checked=False):
         if self.options_dock.isVisible():
             self.options_dock.hide()
@@ -160,10 +174,19 @@ class MainWindow(QMainWindow):
         source=provider.create_source(descriptor.source_id,provider.validate_config(descriptor.source_id,self._source_config()))
         self._apply_source_range()
         self._stream_text=""
+        if self.visualization.currentText() == "Scanner": self._scanner_accumulator=ScannerAccumulator(self.scan_mode.currentText(), None)
         self.controller=AcquisitionController(source); self.controller.scan_received.connect(self._scan_received); self.controller.status.connect(self._source_status); self.controller.failure.connect(self._acquisition_failure); self.controller.start(); self.start_button.setEnabled(False); self.stop_button.setEnabled(True); self._set_health("Waiting for data…")
     def _acquisition_failure(self,error):
         self.start_button.setEnabled(True); self.stop_button.setEnabled(False); self._set_health(f"Acquisition error: {error}")
     def _scan_received(self,scan):
+        if self.visualization.currentText() == "Scanner":
+            session=str(getattr(scan.source, "source_id", "source")); acc=self._scanner_accumulator
+            if acc.capture.started_monotonic_ns is None: acc.capture.started_monotonic_ns=(scan.started_monotonic_ns+scan.ended_monotonic_ns)//2
+            t0=acc.capture.started_monotonic_ns
+            settings=LinearSweepSettings(fov_deg=self.fov.value(), reverse_profile=self.reverse_profile.isChecked()) if self.scan_mode.currentText()=="Linear Sweep" else TurntableSettings(fov_deg=self.fov.value(), reverse_profile=self.reverse_profile.isChecked())
+            fn=project_linear_profile if self.scan_mode.currentText()=="Linear Sweep" else project_turntable_profile
+            if acc.add(fn(scan,session,t0,settings)): self.view.set_scanner_profiles(acc.capture.profiles)
+            return
         self.view.set_scan(scan)
         valid=sum(1 for s in scan.sample_status if s.value == 'VALID'); self._last_counts=(valid, scan.sample_count)
         self._selected_point=None

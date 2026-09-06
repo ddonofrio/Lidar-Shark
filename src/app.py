@@ -2,7 +2,7 @@ import sys
 import math
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPalette
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFormLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QSlider, QGroupBox, QDockWidget, QToolButton, QFrame, QStyle
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFormLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QSlider, QSpinBox, QDoubleSpinBox, QGroupBox, QDockWidget, QToolButton, QFrame, QStyle
 from lidar_sdk.discovery import discover_providers
 from .acquisition import AcquisitionController
 from .widgets import ScanView
@@ -38,9 +38,11 @@ class MainWindow(QMainWindow):
         display_layout.addWidget(self.visualization)
         self.scanner_box=QGroupBox("Scanner configuration"); scanner_layout=QFormLayout(self.scanner_box)
         self.scan_mode=QComboBox(); self.scan_mode.addItems(["Linear Sweep", "Turntable"])
-        self.fov=QSlider(Qt.Horizontal); self.fov.setRange(1,360); self.fov.setValue(180)
-        self.reverse_profile=QCheckBox(); self.clear_capture=QPushButton("Clear capture")
-        scanner_layout.addRow("Scan mode",self.scan_mode); scanner_layout.addRow("Field of view (degrees)",self.fov); scanner_layout.addRow("Reverse profile",self.reverse_profile); scanner_layout.addRow(self.clear_capture)
+        self.fov=QSpinBox(); self.fov.setRange(1,360); self.fov.setValue(180); self.fov.setSuffix(" °"); self.fov.setAccessibleName("Field of view")
+        self.speed=QDoubleSpinBox(); self.speed.setRange(0.01, 1000000); self.speed.setDecimals(2); self.speed.setValue(20.0); self.speed.setSuffix(" mm/s"); self.speed.setAccessibleName("Speed")
+        self.direction=QComboBox(); self.direction.addItems(["Top to bottom", "Bottom to top"]); self.direction.setAccessibleName("Direction")
+        self.clear_capture=QPushButton("Clear capture")
+        scanner_layout.addRow("Scan mode",self.scan_mode); scanner_layout.addRow("Field of view",self.fov); scanner_layout.addRow("Speed",self.speed); scanner_layout.addRow("Direction",self.direction); scanner_layout.addRow(self.clear_capture)
         display_layout.addWidget(self.scanner_box); self.scanner_box.hide(); self._scanner_accumulator=None
         display_layout.addWidget(persistence); display_layout.addWidget(color)
         self.show_color_range=QCheckBox("Show color range"); self.show_color_range.setChecked(True)
@@ -174,7 +176,9 @@ class MainWindow(QMainWindow):
         source=provider.create_source(descriptor.source_id,provider.validate_config(descriptor.source_id,self._source_config()))
         self._apply_source_range()
         self._stream_text=""
-        if self.visualization.currentText() == "Scanner": self._scanner_accumulator=ScannerAccumulator(self.scan_mode.currentText(), None)
+        if self.visualization.currentText() == "Scanner":
+            settings = LinearSweepSettings(self.speed.value(), self.direction.currentText(), self.fov.value()) if self.scan_mode.currentText() == "Linear Sweep" else TurntableSettings(fov_deg=self.fov.value())
+            self._scanner_accumulator=ScannerAccumulator(self.scan_mode.currentText(), settings); self.view.set_scanner_settings(settings)
         self.controller=AcquisitionController(source); self.controller.scan_received.connect(self._scan_received); self.controller.status.connect(self._source_status); self.controller.failure.connect(self._acquisition_failure); self.controller.start(); self.start_button.setEnabled(False); self.stop_button.setEnabled(True); self._set_health("Waiting for data…")
     def _acquisition_failure(self,error):
         self.start_button.setEnabled(True); self.stop_button.setEnabled(False); self._set_health(f"Acquisition error: {error}")
@@ -183,7 +187,7 @@ class MainWindow(QMainWindow):
             session=str(getattr(scan.source, "source_id", "source")); acc=self._scanner_accumulator
             if acc.capture.started_monotonic_ns is None: acc.capture.started_monotonic_ns=(scan.started_monotonic_ns+scan.ended_monotonic_ns)//2
             t0=acc.capture.started_monotonic_ns
-            settings=LinearSweepSettings(fov_deg=self.fov.value(), reverse_profile=self.reverse_profile.isChecked()) if self.scan_mode.currentText()=="Linear Sweep" else TurntableSettings(fov_deg=self.fov.value(), reverse_profile=self.reverse_profile.isChecked())
+            settings=acc.capture.settings
             fn=project_linear_profile if self.scan_mode.currentText()=="Linear Sweep" else project_turntable_profile
             if acc.add(fn(scan,session,t0,settings)): self.view.set_scanner_profiles(acc.capture.profiles)
             return

@@ -5,6 +5,14 @@ from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QFont, QCursor, QFontM
 from PySide6.QtWidgets import QWidget
 from lidar_sdk.geometry import scan_to_points
 
+def linear_sweep_x(profile_mm, center_x, pixels_per_mm):
+    return center_x + profile_mm * pixels_per_mm
+
+def linear_sweep_y(travel_mm, direction, top_y, bottom_y, pixels_per_mm):
+    if direction == "Top to bottom": return top_y + travel_mm * pixels_per_mm
+    if direction == "Bottom to top": return bottom_y - travel_mm * pixels_per_mm
+    raise ValueError("invalid linear sweep direction")
+
 class ScanView(QWidget):
     sample_selected=Signal(object)
     # Emits lidar-frame coordinates as (angle in degrees, distance in mm).
@@ -19,12 +27,15 @@ class ScanView(QWidget):
         self._timer = self.startTimer(33)
         self.mode = "Top View"
         self.scanner_profiles = []
+        self.scanner_settings = None
     def set_mode(self, mode):
         self.mode = mode
         self.update()
     def set_scanner_profiles(self, profiles):
         self.scanner_profiles = list(profiles)
         self.update()
+    def set_scanner_settings(self, settings):
+        self.scanner_settings = settings; self.update()
     def set_persistence(self, value):
         self.persistence_s = value / 1000.0
         self.update()
@@ -127,12 +138,11 @@ class ScanView(QWidget):
         now=time.monotonic()
         if self.mode == "Scanner":
             all_points=[p for profile in self.scanner_profiles for p in profile.points]
-            max_x=max((abs(p.profile_mm) for p in all_points), default=1000.0)
-            max_y=max((abs(p.progression_value) for p in all_points), default=1000.0)
-            scanner_scale=min(self.width()/(2*max_x), self.height()/(2*max_y))*self.zoom
+            scanner_scale=scale
+            direction=getattr(self.scanner_settings, "direction", "Top to bottom")
             for p in all_points:
                 color=self._range_color(p.range_mm) if self.color_mode == "By range" else QColor("#50e6aa")
-                painter.setPen(QPen(color,3)); painter.drawPoint(self.width()/2+p.profile_mm*scanner_scale, self.height()/2+p.progression_value*scanner_scale)
+                painter.setPen(QPen(color,3)); painter.drawPoint(linear_sweep_x(p.profile_mm, c.x(), scanner_scale), linear_sweep_y(p.progression_value, direction, 0, self.height(), scanner_scale))
         for p, born in ([] if self.mode == "Scanner" else self._returns):
             age=now-born; alpha=max(15,min(255,int(255*(1-age/max(self.persistence_s,0.001)))))
             if self.color_mode == "By range":
